@@ -1,2 +1,2 @@
-# Mathematical-Statistics-I-II
-First and second course in graduate mathematical statistics
+# Owens Illinois Competition
+Second phase in the competition
