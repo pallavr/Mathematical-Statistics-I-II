@@ -1,0 +1,155 @@
+---
+title: "Congo"
+author: "Alex Frank"
+date: "July 11, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(ggplot2)
+library(RColorBrewer)
+library(dplyr)
+library(tidyr)
+library(forecast)
+library(fpp2)
+library(lubridate)
+```
+
+```{r}
+raw.data <- read.csv("~/OneDrive - Bowling Green State University/r/OI-Data-Problem-Phase2/oicode/Student_Raw_Data_Phase2.csv")
+```
+
+```{r}
+full.data = raw.data[,1:9]
+colnames(full.data)[1]=("country")
+colnames(full.data)[2]=("date")
+colnames(full.data)[3]=("material")
+colnames(full.data)[4]=("product")
+colnames(full.data)[5]=("customerID")
+colnames(full.data)[6]=("tonnes")
+colnames(full.data)[7]=("forecast")
+colnames(full.data)[8]=("Year")
+colnames(full.data)[9]=("Month")
+full.data$date <- as.Date.character(full.data$date, format = "%m/%d/%Y")
+full.data <- full.data%>%mutate(Year = format(date, "%Y"), Month = format(date, "%m"))
+congo <- full.data %>% filter(country == "Congo") %>% select(customerID, product, tonnes, Year, date, Month)
+```
+
+
+```{r}
+tmp <- congo%>%
+            filter(Year == 2014)%>%
+            group_by(Month,product)%>%
+            summarise(total_orders = n(), unique_customers = n_distinct(customerID), total_tonnes = sum(tonnes))%>%
+            mutate(orders_per_unique = total_orders/unique_customers, tonnes_per_unique = total_tonnes/unique_customers, tonnes_per_order = total_tonnes/total_orders)
+
+#standardizing
+medians <- apply(tmp[,6:8],2,median) 
+mad <- apply(tmp[,6:8],2,mad) 
+tmp_standardize <- scale(tmp[,6:8]) 
+
+#k-means
+fit <- kmeans(tmp_standardize,3)
+tmp$cluster <- fit$cluster
+#get back centers
+centers <- t(apply(fit$centers, 1, function(r) r * attr(tmp_standardize, 'scaled:scale') + attr(tmp_standardize, 'scaled:center')))
+centers <- as.data.frame(centers)
+
+ggplot(tmp, aes(orders_per_unique,tonnes_per_unique, size = tonnes_per_order, col = factor(product), shape = factor(cluster)))+geom_point(alpha = 0.5)+geom_vline(aes(xintercept=orders_per_unique),centers,alpha = 0.3)+geom_hline(aes(yintercept=tonnes_per_unique),centers,alpha=0.3)+labs(size = "Tonnes per order",color ="Product Type",shape ="Cluster")
+```
+
+```{r}
+tmp <- congo%>%
+            group_by(Year,Month,product)%>%
+            summarise(total_orders = n(), unique_customers = n_distinct(customerID), total_tonnes = sum(tonnes))%>%
+            mutate(orders_per_unique = total_orders/unique_customers, tonnes_per_unique = total_tonnes/unique_customers, tonnes_per_order = total_tonnes/total_orders)
+
+
+fit <- lm(total_tonnes~tonnes_per_unique+orders_per_unique,data = tmp)  #total_tonnes is the demand
+summary(fit)
+```
+
+
+```{r}
+plot_by_year <- function(x){
+  for (year in unique(x$Year)){
+    subset <- x[x$Year==year,]
+    #standardizing
+    medians <- apply(subset[,6:8],2,median) 
+    mad <- apply(subset[,6:8],2,mad) 
+    subset_standardize <- scale(subset[,6:8]) 
+    #k-means
+    fit <- kmeans(subset_standardize,3)
+    subset$cluster <- fit$cluster
+    #get back centers
+    centers <- t(apply(fit$centers, 1, function(r) r * attr(subset_standardize, 'scaled:scale') +attr(subset_standardize, 'scaled:center')))
+    centers <- as.data.frame(centers)
+    print(
+      
+      ggplot(subset, aes(orders_per_unique,tonnes_per_unique, size = tonnes_per_order, col = factor(product), shape = factor(cluster)))+geom_point(alpha = 0.5)+geom_vline(aes(xintercept=orders_per_unique),centers,alpha = 0.3)+geom_hline(aes(yintercept=tonnes_per_unique),centers,alpha=0.3)+labs(size = "Tonnes per order",color ="Product Type",shape ="Cluster")+ggtitle(year)
+      
+    )
+  }
+}
+
+plot_by_year(tmp)
+```
+
+Without Cluster
+
+```{r}
+plot_without_cluster <- function(x){
+    for (year in unique(x$Year)){
+    subset <- x[x$Year==year,]
+    print(
+      
+      ggplot(subset, aes(orders_per_unique,tonnes_per_unique, size = total_tonnes, col = factor(product)))+geom_point(alpha = 0.5)+labs(size = "Tonnes per order",color ="Product Type")+ggtitle(year)
+      
+    )
+  }
+}
+
+plot_without_cluster(tmp)
+```
+
+Tonnes per Unique vs Total Tonnes
+
+```{r}
+plot_without_cluster2 <- function(x){
+    for (year in unique(x$Year)){
+    subset <- x[x$Year==year,]
+    print(
+      
+      ggplot(subset, aes(tonnes_per_unique, total_tonnes,size = orders_per_unique, col = factor(product)))+geom_point(alpha = 0.5)+labs(size = "Tonnes per order",color ="Product Type")+ggtitle(year)
+      
+    )
+  }
+}
+
+
+plot_without_cluster2(tmp)
+````
+
+## Segmenting Customers
+
+```{r}
+tmp <- congo%>%
+         group_by(Year,customerID)%>%
+             summarise(total_tonnes = sum(tonnes), total_orders = n(),product_variety = n_distinct(product))
+
+
+plot_for_customer <- function(x){
+    for (year in unique(x$Year)){
+    subset <- x[x$Year==year,]
+    print(
+      
+      ggplot(subset,aes(total_orders,total_tonnes,fill = (product_variety>4)))+geom_point(shape=21,alpha = 0.6,size = 3)+ggtitle(year)
+      
+    )
+  }
+}
+
+plot_for_customer(tmp)
+```
